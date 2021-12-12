@@ -11,14 +11,35 @@ class ConfigStatus(Enum):
     ERROR = 2
 
 
-def to_ulong(i: int) -> int:
-    """Convert signed integer to unsigned integer
+def print_kconfig(config: dict):
+    """Print kernel configuration to stdout.
 
     Args:
-      i: signed integer
+      config: Recovered kernel configuration results.
+    """
+
+    for subsystem, settings in config.items():
+        print('#\n' f"# {subsystem}\n" '#')
+        for name, setting in settings.items():
+            if not setting:
+                print(f'# {name} needs looked at manually!')
+            elif isinstance(setting, str):
+                print(f'{name}="{setting}"')
+            elif isinstance(setting, ConfigStatus):
+                if setting == ConfigStatus.SET:
+                    print(f'{name}=y')
+                elif setting == ConfigStatus.NOT_SET:
+                    print(f'# {name} is not set')
+
+
+def to_ulong(i: int) -> int:
+    """Convert signed integer to unsigned integer.
+
+    Args:
+      i: Signed integer.
 
     Returns:
-      Unsigned integer
+      Unsigned integer.
     """
 
     return i & 0xffffffffffffffff
@@ -31,13 +52,23 @@ class KConfigRecover:
         self.bv = bv
         self.br = BinaryReader(self.bv)
         self.helpers = {
-            'CONFIG_BUILD_SALT': self._recover_config_build_salt,
-            'CONFIG_SWAP': self._recover_config_swap,
-            'CONFIG_SYSVIPC': self._recover_config_sysvipc,
-            'CONFIG_SYSVIPC_SYSCTL': self._recover_config_sysvipc_sysctl,
-            'CONFIG_POSIX_MQUEUE': self._recover_config_posix_mqueue,
-            'CONFIG_POSIX_MQUEUE_SYSCTL':
-            self._recover_config_posix_mqueue_sysctl,
+            'General Setup': {
+                # General setup
+                'CONFIG_BUILD_SALT': self._recover_config_build_salt,
+                'CONFIG_SWAP': self._recover_config_swap,
+                'CONFIG_SYSVIPC': self._recover_config_sysvipc,
+                'CONFIG_SYSVIPC_SYSCTL': self._recover_config_sysvipc_sysctl,
+                'CONFIG_POSIX_MQUEUE': self._recover_config_posix_mqueue,
+                'CONFIG_POSIX_MQUEUE_SYSCTL':
+                self._recover_config_posix_mqueue_sysctl,
+                'CONFIG_CROSS_MEMORY_ATTACH':
+                self._recover_config_cross_memory_attach,
+                'CONFIG_USELIB': self._recover_config_uselib,
+                'CONFIG_AUDIT': self._recover_config_audit,
+                'CONFIG_AUDITSYSCALL': self._recover_config_auditsyscall,
+                'CONFIG_AUDIT_WATCH': self._recover_config_audit_watch,
+                'CONFIG_AUDIT_TREE': self._recover_config_audit_tree,
+            }
         }
 
     def _recover_config_build_salt(self) -> str:
@@ -47,7 +78,7 @@ class KConfigRecover:
         third parameter.
 
         Returns:
-          Build salt string or None
+          Build salt string or None.
         """
 
         syms = self.bv.get_symbols_by_name('sched_debug_header')
@@ -90,7 +121,7 @@ class KConfigRecover:
         """Helper for recovering configuration settings that can be determined based on the presence of a symbol
 
         Args:
-          name: Symbol name
+          name: Symbol name.
 
         Returns:
           Determined configuration setting
@@ -141,6 +172,59 @@ class KConfigRecover:
 
         return self._set_if_symbol_present('mq_register_sysctl_table')
 
+    def _recover_config_cross_memory_attach(self):
+        """Recover CONFIG_CROSS_MEMORY_ATTACH configuration.
+
+        Set if any of the symbols in process_vm_access.c are present
+        """
+
+        if self.bv.platform.arch.name == 'x86_64':
+            return self._set_if_symbol_present('__x64_sys_process_vm_readv')
+
+        # Unimplemented architecture
+        return ConfigStatus.ERROR
+
+    def _recover_config_uselib(self):
+        """Recover CONFIG_USELIB configuration.
+
+        Set if sys_uselib is present.
+        """
+
+        if self.bv.platform.arch.name == 'x86_64':
+            return self._set_if_symbol_present('__x64_sys_uselib')
+
+    def _recover_config_audit(self):
+        """Recover CONFIG_AUDIT configuration.
+
+        Set if symbols from kernel/audit.c are present.
+        """
+
+        return self._set_if_symbol_present('audit_log_start')
+
+    def _recover_config_auditsyscall(self):
+        """Recover CONFIG_AUDITSYSCALL configuration.
+
+        Set if symbols from kernel/auditsc.c are present.
+        """
+
+        return self._set_if_symbol_present('audit_filter_inodes')
+
+    def _recover_config_audit_watch(self):
+        """Recover CONFIG_AUDIT_WATCH configuration.
+
+        Set if symbols from kernel/audit_watch.c are present.
+        """
+
+        return self._set_if_symbol_present('audit_exe_compare')
+
+    def _recover_config_audit_tree(self):
+        """Recover CONFIG_AUDIT_TREE configuration.
+
+        Set if symbols from kernel/audit_tree.c are present.
+        """
+
+        return self._set_if_symbol_present('audit_kill_trees')
+
     def do(self) -> dict:
         """Analyze binary and recover kernel configurations
 
@@ -149,7 +233,9 @@ class KConfigRecover:
         """
 
         results = dict()
-        for setting, helper in self.helpers.items():
-            results[setting] = helper()
+        for subsystem, settings in self.helpers.items():
+            results[subsystem] = dict()
+            for setting, helper in settings.items():
+                results[subsystem][setting] = helper()
 
         return results

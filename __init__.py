@@ -4,7 +4,7 @@ Binary Ninja plugin for recovering kernel build configuration settings using BNI
 
 import argparse
 from binaryninja import BinaryViewType
-from kconfig import KConfigRecover
+from kconfig import KConfigRecover, print_kconfig
 
 
 def parse_args() -> argparse.Namespace:
@@ -31,7 +31,7 @@ def main():
 
     recover = KConfigRecover(bv)
     config = recover.do()
-    print(config)
+    print_kconfig(config)
 
 
 if __name__ == '__main__':
