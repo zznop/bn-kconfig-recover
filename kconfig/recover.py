@@ -1,4 +1,17 @@
-from binaryninja import BinaryView, HighLevelILOperation
+from binaryninja import BinaryView, HighLevelILOperation, BinaryReader
+
+
+def to_ulong(i: int) -> int:
+    """Convert signed integer to unsigned integer
+
+    Args:
+      i: signed integer
+
+    Returns:
+      Unsigned integer
+    """
+
+    return i & 0xffffffffffffffff
 
 
 class KConfigRecover:
@@ -6,6 +19,7 @@ class KConfigRecover:
     """
     def __init__(self, bv: BinaryView):
         self.bv = bv
+        self.br = BinaryReader(self.bv)
         self.helpers = {
             'CONFIG_BUILD_SALT': self._recover_config_build_salt,
         }
@@ -38,8 +52,7 @@ class KConfigRecover:
                 if instr.dest.operation != HighLevelILOperation.HLIL_CONST_PTR:
                     continue
 
-                print(f'{hex(instr.dest.constant)} {hex(syms[0].address)}')
-                if instr.dest.constant & 0xffffffffffffffff == syms[0].address:
+                if to_ulong(instr.dest.constant) == syms[0].address:
                     if len(instr.params) < 3:
                         return None
 
@@ -47,12 +60,12 @@ class KConfigRecover:
                             2].operation != HighLevelILOperation.HLIL_CONST_PTR:
                         return None
 
-                    salt = self.bv.get_string_at(instr.params[2].constant
-                                                 & 0xffffffffffffffff)
-                    print(
-                        f'salt: {salt} {hex(instr.params[2].constant & 0xffffffffffffffff)}'
-                    )
-                    return salt
+                    s = self.bv.get_ascii_string_at(
+                        to_ulong(instr.params[2].constant))
+                    if not s:
+                        return None
+
+                    return s.value
 
     def do(self) -> dict:
         """Analyze binary and recover kernel configurations
