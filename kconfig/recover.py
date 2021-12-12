@@ -1,4 +1,14 @@
 from binaryninja import BinaryView, HighLevelILOperation, BinaryReader
+from enum import Enum
+
+
+class ConfigStatus(Enum):
+    # Configuration is set
+    SET = 1
+    # Configuration is not set
+    NOT_SET = 2
+    # There was an error while trying to recover the configuration
+    ERROR = 3
 
 
 def to_ulong(i: int) -> int:
@@ -22,10 +32,15 @@ class KConfigRecover:
         self.br = BinaryReader(self.bv)
         self.helpers = {
             'CONFIG_BUILD_SALT': self._recover_config_build_salt,
+            'CONFIG_SWAP': self._recover_config_swap,
+            'CONFIG_SYSVIPC': self._recover_config_sysvipc,
         }
 
     def _recover_config_build_salt(self) -> str:
-        """Recover CONFIG_BUILD_SALT configuration
+        """Recover CONFIG_BUILD_SALT configuration.
+
+        Analyze the first call to seq_printf in sched_debug_header and extract the pointer to the build salt from the
+        third parameter.
 
         Returns:
           Build salt string or None
@@ -66,6 +81,28 @@ class KConfigRecover:
                         return None
 
                     return s.value
+
+    def _recover_config_swap(self) -> ConfigStatus:
+        """Recover CONFIG_SWAP configuration.
+
+        If this configuration is defined then iomap_swapfile_add_extent will be present.
+        """
+
+        if not self.bv.get_symbols_by_name('iomap_swapfile_add_extent'):
+            return ConfigStatus.NOT_SET
+
+        return ConfigStatus.SET
+
+    def _recover_config_sysvipc(self) -> ConfigStatus:
+        """Recover CONFIG_SYSVIPC configuration.
+
+        If this configuration is set then sem_init_ns is exported, otherwise it is inlined
+        """
+
+        if not self.bv.get_symbols_by_name('sem_init_ns'):
+            return ConfigStatus.NOT_SET
+
+        return ConfigStatus.SET
 
     def do(self) -> dict:
         """Analyze binary and recover kernel configurations
