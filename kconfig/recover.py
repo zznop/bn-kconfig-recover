@@ -3,12 +3,12 @@ from enum import Enum
 
 
 class ConfigStatus(Enum):
+    # Configuration is not set
+    NOT_SET = 0
     # Configuration is set
     SET = 1
-    # Configuration is not set
-    NOT_SET = 2
     # There was an error while trying to recover the configuration
-    ERROR = 3
+    ERROR = 2
 
 
 def to_ulong(i: int) -> int:
@@ -34,6 +34,10 @@ class KConfigRecover:
             'CONFIG_BUILD_SALT': self._recover_config_build_salt,
             'CONFIG_SWAP': self._recover_config_swap,
             'CONFIG_SYSVIPC': self._recover_config_sysvipc,
+            'CONFIG_SYSVIPC_SYSCTL': self._recover_config_sysvipc_sysctl,
+            'CONFIG_POSIX_MQUEUE': self._recover_config_posix_mqueue,
+            'CONFIG_POSIX_MQUEUE_SYSCTL':
+            self._recover_config_posix_mqueue_sysctl,
         }
 
     def _recover_config_build_salt(self) -> str:
@@ -82,27 +86,60 @@ class KConfigRecover:
 
                     return s.value
 
+    def _set_if_symbol_present(self, name: str) -> ConfigStatus:
+        """Helper for recovering configuration settings that can be determined based on the presence of a symbol
+
+        Args:
+          name: Symbol name
+
+        Returns:
+          Determined configuration setting
+        """
+
+        if self.bv.get_symbols_by_name(name):
+            return ConfigStatus.SET
+
+        return ConfigStatus.NOT_SET
+
     def _recover_config_swap(self) -> ConfigStatus:
         """Recover CONFIG_SWAP configuration.
 
         If this configuration is defined then iomap_swapfile_add_extent will be present.
         """
 
-        if not self.bv.get_symbols_by_name('iomap_swapfile_add_extent'):
-            return ConfigStatus.NOT_SET
-
-        return ConfigStatus.SET
+        return self._set_if_symbol_present('iomap_swapfile_add_extent')
 
     def _recover_config_sysvipc(self) -> ConfigStatus:
         """Recover CONFIG_SYSVIPC configuration.
 
-        If this configuration is set then sem_init_ns is exported, otherwise it is inlined
+        Set if sem_init_ns is present.
         """
 
-        if not self.bv.get_symbols_by_name('sem_init_ns'):
-            return ConfigStatus.NOT_SET
+        return self._set_if_symbol_present('sem_init_ns')
 
-        return ConfigStatus.SET
+    def _recover_config_sysvipc_sysctl(self):
+        """Recover CONFIG_SYSVIPC_SYSCTL configuration.
+
+        Set if ipc_kern_table is present.
+        """
+
+        return self._set_if_symbol_present('ipc_kern_table')
+
+    def _recover_config_posix_mqueue(self):
+        """Recover CONFIG_POSIX_MQUEUE configuration.
+
+        Set if mq_init_ns is present.
+        """
+
+        return self._set_if_symbol_present('mq_init_ns')
+
+    def _recover_config_posix_mqueue_sysctl(self):
+        """Recover CONFIG_POSIX_MQUEUE_SYSCTL configuration.
+
+        Set if mq_register_sysctl_table is present.
+        """
+
+        return self._set_if_symbol_present('mq_register_sysctl_table')
 
     def do(self) -> dict:
         """Analyze binary and recover kernel configurations
