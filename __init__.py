@@ -27,6 +27,7 @@ def main():
     args = parse_args()
 
     bv = BinaryViewType.get_view_of_file(args.bndb)
+    #bv.reanalyze()
     bv.update_analysis_and_wait()
 
     recover = KConfigRecover(bv)

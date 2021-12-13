@@ -30,6 +30,9 @@ def print_kconfig(config: dict):
                     print(f'{name}=y')
                 elif setting == ConfigStatus.NOT_SET:
                     print(f'# {name} is not set')
+                elif setting == ConfigStatus.ERROR:
+                    print(f'# {name} needs looked at manually!')
+        print()
 
 
 def to_ulong(i: int) -> int:
@@ -76,6 +79,31 @@ class KConfigRecover:
                 self._recover_config_generic_irq_show,
                 'CONFIG_GENERIC_IRQ_EFFECTIVE_AFF_MASK':
                 self._recover_config_generic_irq_effective_aff_mask,
+                'CONFIG_GENERIC_PENDING_IRQ':
+                self._recover_config_generic_pending_irq,
+                'CONFIG_GENERIC_IRQ_MIGRATION':
+                self._recover_config_generic_irq_migration,
+                'CONFIG_GENERIC_IRQ_CHIP':
+                self._recover_config_generic_irq_chip,
+                'CONFIG_IRQ_DOMAIN':
+                self._recover_config_irq_domain,
+                'CONFIG_IRQ_DOMAIN_HIERARCHY':
+                self._recover_config_irq_domain_hierarchy,
+                'CONFIG_GENERIC_MSI_IRQ':
+                self._recover_config_generic_msi_irq,
+                'CONFIG_GENERIC_MSI_IRQ_DOMAIN':
+                self._recover_config_generic_msi_irq_domain,
+                'CONFIG_GENERIC_IRQ_MATRIX_ALLOCATOR':
+                self._recover_config_generic_irq_matrix_allocator,
+                # There is no way to determine whether or not this setting is set. It's used for PCI drivers (see drivers/pci/msi.c)
+                'CONFIG_GENERIC_IRQ_RESERVATION_MODE':
+                None,
+                'CONFIG_IRQ_FORCED_THREADING':
+                self._recover_config_irq_forced_threading,
+                'CONFIG_SPARSE_IRQ':
+                self._recover_config_sparse_irq,
+                'CONFIG_GENERIC_IRQ_DEBUGFS':
+                self._recover_config_generic_irq_debugfs,
             }
         }
 
@@ -132,7 +160,7 @@ class KConfigRecover:
           name: Symbol name.
 
         Returns:
-          Determined configuration setting
+          Configuration setting.
         """
 
         if self.bv.get_symbols_by_name(name):
@@ -140,50 +168,54 @@ class KConfigRecover:
 
         return ConfigStatus.NOT_SET
 
-    def _recover_config_swap(self) -> ConfigStatus:
-        """Recover CONFIG_SWAP configuration.
+    def _set_if_string_present(self, value: str) -> ConfigStatus:
+        """Helper for recovering configuration settings that can be determined based on the presence of a string
 
-        If this configuration is defined then iomap_swapfile_add_extent will be present.
+        Args:
+          value: String value.
+
+        Returns:
+          Configuration setting.
+        """
+        strings = self.bv.get_strings()
+        for s in strings:
+            if s.value == value:
+                return ConfigStatus.SET
+
+        return ConfigStatus.NOT_SET
+
+    def _recover_config_swap(self) -> ConfigStatus:
+        """If this configuration is defined then iomap_swapfile_add_extent will be present.
         """
 
         return self._set_if_symbol_present('iomap_swapfile_add_extent')
 
     def _recover_config_sysvipc(self) -> ConfigStatus:
-        """Recover CONFIG_SYSVIPC configuration.
-
-        Set if sem_init_ns is present.
+        """Set if sem_init_ns is present.
         """
 
         return self._set_if_symbol_present('sem_init_ns')
 
     def _recover_config_sysvipc_sysctl(self):
-        """Recover CONFIG_SYSVIPC_SYSCTL configuration.
-
-        Set if ipc_kern_table is present.
+        """Set if ipc_kern_table is present.
         """
 
         return self._set_if_symbol_present('ipc_kern_table')
 
     def _recover_config_posix_mqueue(self):
-        """Recover CONFIG_POSIX_MQUEUE configuration.
-
-        Set if mq_init_ns is present.
+        """Set if mq_init_ns is present.
         """
 
         return self._set_if_symbol_present('mq_init_ns')
 
     def _recover_config_posix_mqueue_sysctl(self):
-        """Recover CONFIG_POSIX_MQUEUE_SYSCTL configuration.
-
-        Set if mq_register_sysctl_table is present.
+        """Set if mq_register_sysctl_table is present.
         """
 
         return self._set_if_symbol_present('mq_register_sysctl_table')
 
     def _recover_config_cross_memory_attach(self):
-        """Recover CONFIG_CROSS_MEMORY_ATTACH configuration.
-
-        Set if any of the symbols in process_vm_access.c are present
+        """Set if any of the symbols in process_vm_access.c are present
         """
 
         if self.bv.platform.arch.name == 'x86_64':
@@ -193,76 +225,119 @@ class KConfigRecover:
         return ConfigStatus.ERROR
 
     def _recover_config_uselib(self):
-        """Recover CONFIG_USELIB configuration.
-
-        Set if sys_uselib is present.
+        """Set if sys_uselib is present.
         """
 
         if self.bv.platform.arch.name == 'x86_64':
             return self._set_if_symbol_present('__x64_sys_uselib')
 
     def _recover_config_audit(self):
-        """Recover CONFIG_AUDIT configuration.
-
-        Set if symbols from kernel/audit.c are present.
+        """Set if symbols from kernel/audit.c are present.
         """
 
         return self._set_if_symbol_present('audit_log_start')
 
     def _recover_config_auditsyscall(self):
-        """Recover CONFIG_AUDITSYSCALL configuration.
-
-        Set if symbols from kernel/auditsc.c are present.
+        """Set if symbols from kernel/auditsc.c are present.
         """
 
         return self._set_if_symbol_present('audit_filter_inodes')
 
     def _recover_config_audit_watch(self):
-        """Recover CONFIG_AUDIT_WATCH configuration.
-
-        Set if symbols from kernel/audit_watch.c are present.
+        """Set if symbols from kernel/audit_watch.c are present.
         """
 
         return self._set_if_symbol_present('audit_exe_compare')
 
     def _recover_config_audit_tree(self):
-        """Recover CONFIG_AUDIT_TREE configuration.
-
-        Set if symbols from kernel/audit_tree.c are present.
+        """Set if symbols from kernel/audit_tree.c are present.
         """
 
         return self._set_if_symbol_present('audit_kill_trees')
 
     def _recover_config_generic_irq_probe(self):
-        """Recover CONFIG_GENERIC_IRQ_PROBE configuration.
-
-        Set if symbols from kernel/irq/autoprobe.c are present.
+        """Set if symbols from kernel/irq/autoprobe.c are present.
         """
 
         return self._set_if_symbol_present('probe_irq_on')
 
     def _recover_config_generic_irq_show(self):
-        """Recover CONFIG_GENERIC_IRQ_SHOW configuration.
-
-        Set if arch_show_interrupts symbol is present.
+        """Set if arch_show_interrupts symbol is present.
         """
 
         return self._set_if_symbol_present('arch_show_interrupts')
 
     def _recover_config_generic_irq_effective_aff_mask(self):
-        """Recover CONFIG_GENERIC_IRQ_EFFECTIVE_AFF_MASK configuration.
-
-        Set if effective_affinity_list string is present in the binary. See proc. register_irq_proc.
+        """Set if effective_affinity_list string is present in the binary. See proc.c:register_irq_proc.
         """
 
-        return ConfigStatus.ERROR
-        strings = self.bv.get_strings()
-        for s in strings:
-            print(s.value)
-            if s.value == 'effective_affinity_list':
-                return ConfigStatus.SET
+        return self._set_if_string_present('effective_affinity_list')
 
-        return ConfigStatus.NOT_SET
+    def _recover_config_generic_pending_irq(self):
+        """Set if any symbols from kernel/irq/migration.c are present.
+        """
+
+        return self._set_if_symbol_present('irq_fixup_move_pending')
+
+    def _recover_config_generic_irq_migration(self):
+        """Set if any symbols from kernel/irq/cpuhotplug.c are present.
+        """
+
+        return self._set_if_symbol_present('irq_migrate_all_off_this_cpu')
+
+    def _recover_config_generic_irq_chip(self):
+        """Set if any symbols from kernel/irq/generic-chip.c are present.
+        """
+
+        return self._set_if_symbol_present('irq_gc_mask_disable_reg')
+
+    def _recover_config_irq_domain(self):
+        """Set if any symbols from kernel/irq/irqdomain.c are present.
+        """
+
+        return self._set_if_symbol_present('irq_domain_free_fwnode')
+
+    def _recover_config_irq_domain_hierarchy(self):
+        """Set if irq_domain_create_hierarchy from kernel/irq/irqdomain.c is present.
+        """
+
+        return self._set_if_symbol_present('irq_domain_create_hierarchy')
+
+    def _recover_config_generic_msi_irq(self):
+        """Set if symbols from kernel/irq/msi.c are present.
+        """
+
+        return self._set_if_symbol_present('alloc_msi_entry')
+
+    def _recover_config_generic_msi_irq_domain(self):
+        """Set if msi_domain_set_affinity from kernel/irq/msi.c is present.
+        """
+
+        return self._set_if_symbol_present('msi_domain_set_affinity')
+
+    def _recover_config_generic_irq_matrix_allocator(self):
+        """Set if any symbols from kernel/irq/matrix.c are present.
+        """
+
+        return self._set_if_symbol_present('irq_matrix_online')
+
+    def _recover_config_irq_forced_threading(self):
+        """Set if force_irqthreads from kernel/irq/manage.c is present.
+        """
+
+        return self._set_if_symbol_present('force_irqthreads')
+
+    def _recover_config_sparse_irq(self):
+        """Set if irq_lock_sparse from  kernel/irq/irqdesc.c is present.
+        """
+
+        return self._set_if_symbol_present('irq_lock_sparse')
+
+    def _recover_config_generic_irq_debugfs(self):
+        """Set if any symbols from kernel/irq/debugfs.c are present.
+        """
+
+        return self._set_if_symbol_present('irq_debugfs_copy_devname')
 
     def do(self) -> dict:
         """Analyze binary and recover kernel configurations
@@ -275,6 +350,9 @@ class KConfigRecover:
         for subsystem, settings in self.helpers.items():
             results[subsystem] = dict()
             for setting, helper in settings.items():
-                results[subsystem][setting] = helper()
+                if helper:
+                    results[subsystem][setting] = helper()
+                else:
+                    results[subsystem][setting] = None
 
         return results
