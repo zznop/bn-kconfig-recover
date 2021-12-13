@@ -68,6 +68,14 @@ class KConfigRecover:
                 'CONFIG_AUDITSYSCALL': self._recover_config_auditsyscall,
                 'CONFIG_AUDIT_WATCH': self._recover_config_audit_watch,
                 'CONFIG_AUDIT_TREE': self._recover_config_audit_tree,
+            },
+            'IRQ Subsystem': {
+                'CONFIG_GENERIC_IRQ_PROBE':
+                self._recover_config_generic_irq_probe,
+                'CONFIG_GENERIC_IRQ_SHOW':
+                self._recover_config_generic_irq_show,
+                'CONFIG_GENERIC_IRQ_EFFECTIVE_AFF_MASK':
+                self._recover_config_generic_irq_effective_aff_mask,
             }
         }
 
@@ -224,6 +232,37 @@ class KConfigRecover:
         """
 
         return self._set_if_symbol_present('audit_kill_trees')
+
+    def _recover_config_generic_irq_probe(self):
+        """Recover CONFIG_GENERIC_IRQ_PROBE configuration.
+
+        Set if symbols from kernel/irq/autoprobe.c are present.
+        """
+
+        return self._set_if_symbol_present('probe_irq_on')
+
+    def _recover_config_generic_irq_show(self):
+        """Recover CONFIG_GENERIC_IRQ_SHOW configuration.
+
+        Set if arch_show_interrupts symbol is present.
+        """
+
+        return self._set_if_symbol_present('arch_show_interrupts')
+
+    def _recover_config_generic_irq_effective_aff_mask(self):
+        """Recover CONFIG_GENERIC_IRQ_EFFECTIVE_AFF_MASK configuration.
+
+        Set if effective_affinity_list string is present in the binary. See proc. register_irq_proc.
+        """
+
+        return ConfigStatus.ERROR
+        strings = self.bv.get_strings()
+        for s in strings:
+            print(s.value)
+            if s.value == 'effective_affinity_list':
+                return ConfigStatus.SET
+
+        return ConfigStatus.NOT_SET
 
     def do(self) -> dict:
         """Analyze binary and recover kernel configurations
