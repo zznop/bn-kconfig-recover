@@ -22,7 +22,7 @@ def print_kconfig(config: dict):
         print('#\n' f"# {subsystem}\n" '#')
         for name, setting in settings.items():
             if not setting:
-                print(f'# {name} needs looked at manually!')
+                print(f'# {name} needs user intervention')
             elif isinstance(setting, str):
                 print(f'{name}="{setting}"')
             elif isinstance(setting, ConfigStatus):
@@ -104,6 +104,26 @@ class KConfigRecover:
                 self._recover_config_sparse_irq,
                 'CONFIG_GENERIC_IRQ_DEBUGFS':
                 self._recover_config_generic_irq_debugfs,
+                'CONFIG_CLOCKSOURCE_WATCHDOG':
+                self._recover_config_clocksource_watchdog,
+                'CONFIG_ARCH_CLOCKSOURCE_DATA':
+                self._recover_config_arch_clocksource_data,
+                # TODO: I think we can get this one, but it will be a lot of work and won't make a difference for
+                # building drivers. See kernel/time/timekeeping_internal.h
+                'CONFIG_CLOCKSOURCE_VALIDATE_LAST_CYCLE':
+                None,
+                'CONFIG_GENERIC_TIME_VSYSCALL':
+                self._recover_config_generic_time_vsyscall,
+                'CONFIG_GENERIC_CLOCKEVENTS':
+                self._recover_config_generic_clockevents,
+                'CONFIG_GENERIC_CLOCKEVENTS_BROADCAST':
+                self._recover_config_generic_clockevents_broadcast,
+                # TODO: Another one we might be able to get, but may not be worth the effort. Slightly changes
+                # clockevents_program_min_delta, a static function in kernel/time/clockevents.c
+                'CONFIG_GENERIC_CLOCKEVENTS_MIN_BROADCAST':
+                None,
+                'CONFIG_GENERIC_CMOS_UPDATE':
+                self._recover_config_generic_cmos_update,
             }
         }
 
@@ -196,148 +216,188 @@ class KConfigRecover:
 
         return self._set_if_symbol_present('sem_init_ns')
 
-    def _recover_config_sysvipc_sysctl(self):
+    def _recover_config_sysvipc_sysctl(self) -> ConfigStatus:
         """Set if ipc_kern_table is present.
         """
 
         return self._set_if_symbol_present('ipc_kern_table')
 
-    def _recover_config_posix_mqueue(self):
+    def _recover_config_posix_mqueue(self) -> ConfigStatus:
         """Set if mq_init_ns is present.
         """
 
         return self._set_if_symbol_present('mq_init_ns')
 
-    def _recover_config_posix_mqueue_sysctl(self):
+    def _recover_config_posix_mqueue_sysctl(self) -> ConfigStatus:
         """Set if mq_register_sysctl_table is present.
         """
 
         return self._set_if_symbol_present('mq_register_sysctl_table')
 
-    def _recover_config_cross_memory_attach(self):
+    def _recover_config_cross_memory_attach(self) -> ConfigStatus:
         """Set if any of the symbols in process_vm_access.c are present
         """
 
         if self.bv.platform.arch.name == 'x86_64':
             return self._set_if_symbol_present('__x64_sys_process_vm_readv')
 
-        # Unimplemented architecture
-        return ConfigStatus.ERROR
+        return ConfigStatus.ERROR  # Unimplemented architecture
 
-    def _recover_config_uselib(self):
+    def _recover_config_uselib(self) -> ConfigStatus:
         """Set if sys_uselib is present.
         """
 
         if self.bv.platform.arch.name == 'x86_64':
             return self._set_if_symbol_present('__x64_sys_uselib')
 
-    def _recover_config_audit(self):
+        return ConfigStatus.ERROR  # Unimplemented architecture
+
+    def _recover_config_audit(self) -> ConfigStatus:
         """Set if symbols from kernel/audit.c are present.
         """
 
         return self._set_if_symbol_present('audit_log_start')
 
-    def _recover_config_auditsyscall(self):
+    def _recover_config_auditsyscall(self) -> ConfigStatus:
         """Set if symbols from kernel/auditsc.c are present.
         """
 
         return self._set_if_symbol_present('audit_filter_inodes')
 
-    def _recover_config_audit_watch(self):
+    def _recover_config_audit_watch(self) -> ConfigStatus:
         """Set if symbols from kernel/audit_watch.c are present.
         """
 
         return self._set_if_symbol_present('audit_exe_compare')
 
-    def _recover_config_audit_tree(self):
+    def _recover_config_audit_tree(self) -> ConfigStatus:
         """Set if symbols from kernel/audit_tree.c are present.
         """
 
         return self._set_if_symbol_present('audit_kill_trees')
 
-    def _recover_config_generic_irq_probe(self):
+    def _recover_config_generic_irq_probe(self) -> ConfigStatus:
         """Set if symbols from kernel/irq/autoprobe.c are present.
         """
 
         return self._set_if_symbol_present('probe_irq_on')
 
-    def _recover_config_generic_irq_show(self):
+    def _recover_config_generic_irq_show(self) -> ConfigStatus:
         """Set if arch_show_interrupts symbol is present.
         """
 
         return self._set_if_symbol_present('arch_show_interrupts')
 
-    def _recover_config_generic_irq_effective_aff_mask(self):
+    def _recover_config_generic_irq_effective_aff_mask(self) -> ConfigStatus:
         """Set if effective_affinity_list string is present in the binary. See proc.c:register_irq_proc.
         """
 
         return self._set_if_string_present('effective_affinity_list')
 
-    def _recover_config_generic_pending_irq(self):
+    def _recover_config_generic_pending_irq(self) -> ConfigStatus:
         """Set if any symbols from kernel/irq/migration.c are present.
         """
 
         return self._set_if_symbol_present('irq_fixup_move_pending')
 
-    def _recover_config_generic_irq_migration(self):
+    def _recover_config_generic_irq_migration(self) -> ConfigStatus:
         """Set if any symbols from kernel/irq/cpuhotplug.c are present.
         """
 
         return self._set_if_symbol_present('irq_migrate_all_off_this_cpu')
 
-    def _recover_config_generic_irq_chip(self):
+    def _recover_config_generic_irq_chip(self) -> ConfigStatus:
         """Set if any symbols from kernel/irq/generic-chip.c are present.
         """
 
         return self._set_if_symbol_present('irq_gc_mask_disable_reg')
 
-    def _recover_config_irq_domain(self):
+    def _recover_config_irq_domain(self) -> ConfigStatus:
         """Set if any symbols from kernel/irq/irqdomain.c are present.
         """
 
         return self._set_if_symbol_present('irq_domain_free_fwnode')
 
-    def _recover_config_irq_domain_hierarchy(self):
+    def _recover_config_irq_domain_hierarchy(self) -> ConfigStatus:
         """Set if irq_domain_create_hierarchy from kernel/irq/irqdomain.c is present.
         """
 
         return self._set_if_symbol_present('irq_domain_create_hierarchy')
 
-    def _recover_config_generic_msi_irq(self):
+    def _recover_config_generic_msi_irq(self) -> ConfigStatus:
         """Set if symbols from kernel/irq/msi.c are present.
         """
 
         return self._set_if_symbol_present('alloc_msi_entry')
 
-    def _recover_config_generic_msi_irq_domain(self):
+    def _recover_config_generic_msi_irq_domain(self) -> ConfigStatus:
         """Set if msi_domain_set_affinity from kernel/irq/msi.c is present.
         """
 
         return self._set_if_symbol_present('msi_domain_set_affinity')
 
-    def _recover_config_generic_irq_matrix_allocator(self):
+    def _recover_config_generic_irq_matrix_allocator(self) -> ConfigStatus:
         """Set if any symbols from kernel/irq/matrix.c are present.
         """
 
         return self._set_if_symbol_present('irq_matrix_online')
 
-    def _recover_config_irq_forced_threading(self):
+    def _recover_config_irq_forced_threading(self) -> ConfigStatus:
         """Set if force_irqthreads from kernel/irq/manage.c is present.
         """
 
         return self._set_if_symbol_present('force_irqthreads')
 
-    def _recover_config_sparse_irq(self):
+    def _recover_config_sparse_irq(self) -> ConfigStatus:
         """Set if irq_lock_sparse from  kernel/irq/irqdesc.c is present.
         """
 
         return self._set_if_symbol_present('irq_lock_sparse')
 
-    def _recover_config_generic_irq_debugfs(self):
+    def _recover_config_generic_irq_debugfs(self) -> ConfigStatus:
         """Set if any symbols from kernel/irq/debugfs.c are present.
         """
 
         return self._set_if_symbol_present('irq_debugfs_copy_devname')
+
+    def _recover_config_clocksource_watchdog(self) -> ConfigStatus:
+        """Set if clocksource_watchdog_work from kernel/time/clocksource.c is present.
+        """
+
+        return self._set_if_symbol_present('clocksource_watchdog_work')
+
+    def _recover_config_arch_clocksource_data(self) -> ConfigStatus:
+        """Set unconditionally for certain architectures.
+        """
+
+        if self.bv.platform.arch.name == 'x86_64':
+            return ConfigStatus.SET
+
+        return ConfigStatus.ERROR  # Unimplemented Architecture
+
+    def _recover_config_generic_time_vsyscall(self) -> ConfigStatus:
+        """Set if update_vsyscall from include/linux/timekeeper_internal.h is present.
+        """
+
+        return self._set_if_symbol_present('update_vsyscall')
+
+    def _recover_config_generic_clockevents(self) -> ConfigStatus:
+        """Set if any symbols from kernel/time/clockevents.c are present.
+        """
+
+        return self._set_if_symbol_present('clockevent_delta2ns')
+
+    def _recover_config_generic_clockevents_broadcast(self) -> ConfigStatus:
+        """Set if any symbols from kernel/time/tick-broadcast.c are present.
+        """
+
+        return self._set_if_symbol_present('tick_receive_broadcast')
+
+    def _recover_config_generic_cmos_update(self) -> ConfigStatus:
+        """Set if update_persistent_clock from kernel/time/ntp.c is present
+        """
+
+        return self._set_if_symbol_present('update_persistent_clock64')
 
     def do(self) -> dict:
         """Analyze binary and recover kernel configurations
