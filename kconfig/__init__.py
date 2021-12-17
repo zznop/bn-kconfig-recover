@@ -1,1 +1,1 @@
-from .recover import KConfigRecover, print_kconfig
+from .recover import KConfigRecover, save_kconfig

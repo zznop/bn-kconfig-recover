@@ -1,5 +1,6 @@
 from binaryninja import BinaryView, HighLevelILOperation, BinaryReader
 from enum import Enum
+import logging
 
 
 class ConfigStatus(Enum):
@@ -11,28 +12,32 @@ class ConfigStatus(Enum):
     ERROR = 2
 
 
-def print_kconfig(config: dict):
-    """Print kernel configuration to stdout.
+def save_kconfig(config: dict, filepath: str):
+    """Save kernel configuration to a file.
 
     Args:
       config: Recovered kernel configuration results.
+      filepath: Path to output kconfig file.
     """
 
-    for subsystem, settings in config.items():
-        print('#\n' f"# {subsystem}\n" '#')
-        for name, setting in settings.items():
-            if not setting:
-                print(f'# {name} needs user intervention')
-            elif isinstance(setting, str):
-                print(f'{name}="{setting}"')
-            elif isinstance(setting, ConfigStatus):
-                if setting == ConfigStatus.SET:
-                    print(f'{name}=y')
-                elif setting == ConfigStatus.NOT_SET:
-                    print(f'# {name} is not set')
-                elif setting == ConfigStatus.ERROR:
-                    print(f'# {name} needs looked at manually!')
-        print()
+    with open(filepath, 'w') as f:
+        for subsystem, settings in config.items():
+            f.write('#\n' f"# {subsystem}\n" '#\n')
+            for name, setting in settings.items():
+                if not setting:
+                    f.write(f'# {name} needs user intervention\n')
+                elif isinstance(setting, str):
+                    f.write(f'{name}="{setting}"\n')
+                elif isinstance(setting, ConfigStatus):
+                    if setting == ConfigStatus.SET:
+                        f.write(f'{name}=y\n')
+                    elif setting == ConfigStatus.NOT_SET:
+                        f.write(f'# {name} is not set\n')
+                    elif setting == ConfigStatus.ERROR:
+                        f.write(f'# {name} needs user intervention\n')
+            f.write('\n')
+
+    logging.info(f'Recovered kconfig saved to "{filepath}"')
 
 
 def to_ulong(i: int) -> int:
@@ -139,14 +144,17 @@ class KConfigRecover:
 
         syms = self.bv.get_symbols_by_name('sched_debug_header')
         if not syms:
+            logging.error('Failed to lookup sched_debug_header')
             return None
 
         sched_debug_header = self.bv.get_function_at(syms[0].address)
         if not sched_debug_header:
+            logging.error('Failed to get function sched_debug_header')
             return None
 
         syms = self.bv.get_symbols_by_name('seq_printf')
         if not syms:
+            logging.error('Failed to lookup seq_printf')
             return None
 
         call_to_seq_printf = None
@@ -160,15 +168,21 @@ class KConfigRecover:
 
                 if to_ulong(instr.dest.constant) == syms[0].address:
                     if len(instr.params) < 3:
+                        logging.error(
+                            'First call in sched_debug header is not to seq_printf!?'
+                        )
                         return None
 
                     if instr.params[
                             2].operation != HighLevelILOperation.HLIL_CONST_PTR:
+                        logging.error(
+                            'param3 of seq_printf call is not a pointer')
                         return None
 
                     s = self.bv.get_ascii_string_at(
                         to_ulong(instr.params[2].constant))
                     if not s:
+                        logging.error('Failed to get build salt string')
                         return None
 
                     return s.value
@@ -241,7 +255,9 @@ class KConfigRecover:
         if self.bv.platform.arch.name == 'x86_64':
             return self._set_if_symbol_present('__x64_sys_process_vm_readv')
 
-        return ConfigStatus.ERROR  # Unimplemented architecture
+        logging.error(
+            f'Architecture is unsupported {self.bv.platform.arch.name}')
+        return ConfigStatus.ERROR
 
     def _recover_config_uselib(self) -> ConfigStatus:
         """Set if sys_uselib is present.
@@ -250,7 +266,9 @@ class KConfigRecover:
         if self.bv.platform.arch.name == 'x86_64':
             return self._set_if_symbol_present('__x64_sys_uselib')
 
-        return ConfigStatus.ERROR  # Unimplemented architecture
+        logging.error(
+            f'Architecture is unsupported {self.bv.platform.arch.name}')
+        return ConfigStatus.ERROR
 
     def _recover_config_audit(self) -> ConfigStatus:
         """Set if symbols from kernel/audit.c are present.
@@ -373,7 +391,9 @@ class KConfigRecover:
         if self.bv.platform.arch.name == 'x86_64':
             return ConfigStatus.SET
 
-        return ConfigStatus.ERROR  # Unimplemented Architecture
+        logging.error(
+            f'Architecture is unsupported {self.bv.platform.arch.name}')
+        return ConfigStatus.ERROR
 
     def _recover_config_generic_time_vsyscall(self) -> ConfigStatus:
         """Set if update_vsyscall from include/linux/timekeeper_internal.h is present.
@@ -408,6 +428,7 @@ class KConfigRecover:
 
         results = dict()
         for subsystem, settings in self.helpers.items():
+            logging.info(f'Recovering "{subsystem}" configurations...')
             results[subsystem] = dict()
             for setting, helper in settings.items():
                 if helper:
