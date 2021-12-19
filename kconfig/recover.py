@@ -136,6 +136,7 @@ class KConfigRecover:
                 'CONFIG_HIGH_RES_TIMERS': self._recover_config_high_res_timers,
                 'CONFIG_PREEMPT_VOLUNTARY':
                 self._recover_config_preempt_voluntary,
+                'CONFIG_PREEMPT': self._recover_config_preempt,
             },
         }
 
@@ -444,6 +445,12 @@ class KConfigRecover:
 
         return self._set_if_symbol_present('clock_was_set_delayed')
 
+    def _recover_config_preempt(self) -> ConfigStatus:
+        """Set if preempt_schedule from kernel/sched/core.c is present.
+        """
+
+        return self._set_if_symbol_present('preempt_schedule')
+
     def _recover_config_preempt_voluntary(self) -> ConfigStatus:
         """Set if mmiotrace_iounmap calls _cond_resched.
 
@@ -479,5 +486,15 @@ class KConfigRecover:
                     results[subsystem][setting] = helper()
                 else:
                     results[subsystem][setting] = None
+
+        # Some post-processing configs
+        if results['Timer Subsystem'][
+                'CONFIG_PREEMPT_VOLUNTARY'] is ConfigStatus.SET or results[
+                    'Timer Subsystem']['CONFIG_PREEMPT'] is ConfigStatus.SET:
+            results['Timer Subsystem'][
+                'CONFIG_PREEMPT_NONE'] = ConfigStatus.NOT_SET
+        else:
+            results['Timer Subsystem'][
+                'CONFIG_PREEMPT_NONE'] = ConfigStatus.SET
 
         return results
