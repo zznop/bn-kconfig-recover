@@ -129,7 +129,14 @@ class KConfigRecover:
                 None,
                 'CONFIG_GENERIC_CMOS_UPDATE':
                 self._recover_config_generic_cmos_update,
-            }
+            },
+            'Timer Subsystem': {
+                'CONFIG_TICK_ONESHOT': self._recover_config_tick_oneshot,
+                'CONFIG_NO_HZ_COMMON': self._recover_config_no_hz_common,
+                'CONFIG_HIGH_RES_TIMERS': self._recover_config_high_res_timers,
+                'CONFIG_PREEMPT_VOLUNTARY':
+                self._recover_config_preempt_voluntary,
+            },
         }
 
     def _recover_config_build_salt(self) -> str:
@@ -418,6 +425,43 @@ class KConfigRecover:
         """
 
         return self._set_if_symbol_present('update_persistent_clock64')
+
+    def _recover_config_tick_oneshot(self) -> ConfigStatus:
+        """Set if any symbols from tick-oneshot.c are present
+        """
+
+        return self._set_if_symbol_present('tick_program_event')
+
+    def _recover_config_no_hz_common(self) -> ConfigStatus:
+        """Set if calc_load_nohz_start from include/linux/sched/nohz.h is present.
+        """
+
+        return self._set_if_symbol_present('calc_load_nohz_start')
+
+    def _recover_config_high_res_timers(self) -> ConfigStatus:
+        """Set if clock_was_set_delayed from include/linux/hrtimer.h is present.
+        """
+
+        return self._set_if_symbol_present('clock_was_set_delayed')
+
+    def _recover_config_preempt_voluntary(self) -> ConfigStatus:
+        """Set if mmiotrace_iounmap calls _cond_resched.
+
+        This starts with include/linux/kernel.h. If the configuration is set, then might_resched calls _cond_resched.
+        The might_sleep macro calls might_resched, and mmiotrace_iounmap calls might_sleep.
+        """
+
+        syms = self.bv.get_symbols_by_name('_cond_resched')
+        if not syms:
+            logging.error('Failed to lookup _cond_resched')
+            return ConfigStatus.ERROR
+
+        xrefs = self.bv.get_code_refs(syms[0].address)
+        for xref in xrefs:
+            if xref.function.name == 'mmiotrace_iounmap':
+                return ConfigStatus.SET
+
+        return ConfigStatus.NO_SET
 
     def do(self) -> dict:
         """Analyze binary and recover kernel configurations

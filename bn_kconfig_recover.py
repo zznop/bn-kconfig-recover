@@ -42,7 +42,7 @@ def main():
     logging.info(f'Opening "{args.bndb}" and getting view...')
     bv = BinaryViewType.get_view_of_file(args.bndb)
     logging.info('Running BN analysis, this may take some time...')
-    bv.reanalyze()
+    #bv.reanalyze()
     bv.update_analysis_and_wait()
 
     recover = KConfigRecover(bv)
