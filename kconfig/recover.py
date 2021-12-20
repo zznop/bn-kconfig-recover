@@ -143,6 +143,21 @@ class KConfigRecover:
                 self._recover_config_preempt_voluntary,
                 'CONFIG_PREEMPT': self._recover_config_preempt,
             },
+            'CPU/Task time and stats accounting': {
+                'CONFIG_TICK_CPU_ACCOUNTING':
+                self._recover_config_tick_cpu_accounting,
+                'CONFIG_VIRT_CPU_ACCOUNTING_GEN':
+                self._recover_config_virt_cpu_accounting_gen,
+                'CONFIG_IRQ_TIME_ACCOUNTING':
+                self._recover_config_irq_time_accounting,
+                'CONFIG_BSD_PROCESS_ACCT':
+                self._recover_config_bsd_process_acct,
+                # See include/linux/acct.h
+                'CONFIG_BSD_PROCESS_ACCT_V3': None,
+                'CONFIG_TASKSTATS': self._recover_config_taskstats,
+                'CONFIG_TASK_DELAY_ACCT': self._recover_config_task_delay_acct,
+                'CONFIG_TASK_XACCT': self._recover_config_task_xacct,
+            }
         }
 
     def _recover_config_build_salt(self) -> str:
@@ -480,6 +495,53 @@ class KConfigRecover:
                 return ConfigStatus.SET
 
         return ConfigStatus.NO_SET
+
+    def _recover_config_tick_cpu_accounting(self) -> ConfigStatus:
+        """Set if architecture is not PPC64.
+        """
+
+        if self.bv.platform.arch.name == 'x86_64':
+            return ConfigStatus.SET
+
+        logging.error(
+            f'Architecture is unsupported {self.bv.platform.arch.name}')
+        return ConfigStatus.ERROR
+
+    def _recover_config_virt_cpu_accounting_gen(self) -> ConfigStatus:
+        """Set if vtime_user_enter from include/linux/vtime.h is present.
+        """
+
+        return self._set_if_symbol_present('vtime_user_enter')
+
+    def _recover_config_irq_time_accounting(self) -> ConfigStatus:
+        """Set if irqtime_account_irq from include/linux/vtime.h is present.
+        """
+
+        return self._set_if_symbol_present('irqtime_account_irq')
+
+    def _recover_config_bsd_process_acct(self) -> ConfigStatus:
+        """Set if any symbols from kernel/acct.c are present.
+        """
+
+        return self._set_if_symbol_present('acct_exit_ns')
+
+    def _recover_config_taskstats(self) -> ConfigStatus:
+        """Set if any symbols from kernel/taskstats.c are present.
+        """
+
+        return self._set_if_symbol_present('taskstats_exit')
+
+    def _recover_config_task_delay_acct(self) -> ConfigStatus:
+        """Set if any symbols from kernel/delayacct.c.
+        """
+
+        return self._set_if_symbol_present('delayacct_init')
+
+    def _recover_config_task_xacct(self) -> ConfigStatus:
+        """Set if xacct_add_tsk from kernel/tsacct.c.
+        """
+
+        return self._set_if_symbol_present('xacct_add_tsk')
 
     def do(self) -> dict:
         """Analyze binary and recover kernel configurations
