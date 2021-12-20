@@ -133,6 +133,11 @@ class KConfigRecover:
             'Timer Subsystem': {
                 'CONFIG_TICK_ONESHOT': self._recover_config_tick_oneshot,
                 'CONFIG_NO_HZ_COMMON': self._recover_config_no_hz_common,
+                'CONFIG_NO_HZ_FULL': self._recover_config_no_hz_full,
+                # CONFIG_NO_HZ_IDLE, CONFIG_NO_HZ_PERIODIC, and CONFIG_NO_HZ don't seem to be used in v4.18 kernel
+                'CONFIG_NO_HZ_IDLE': None,
+                'CONFIG_HZ_PERIODIC': None,
+                'CONFIG_NO_HZ': None,
                 'CONFIG_HIGH_RES_TIMERS': self._recover_config_high_res_timers,
                 'CONFIG_PREEMPT_VOLUNTARY':
                 self._recover_config_preempt_voluntary,
@@ -438,6 +443,12 @@ class KConfigRecover:
         """
 
         return self._set_if_symbol_present('calc_load_nohz_start')
+
+    def _recover_config_no_hz_full(self) -> ConfigStatus:
+        """Set if rcu_user_enter from kernel/rcu/tree.c is present.
+        """
+
+        return self._set_if_symbol_present('rcu_user_enter')
 
     def _recover_config_high_res_timers(self) -> ConfigStatus:
         """Set if clock_was_set_delayed from include/linux/hrtimer.h is present.
