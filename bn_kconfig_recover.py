@@ -39,14 +39,18 @@ def main():
     else:
         logger.setLevel(logging.INFO)
 
-    logging.info(f'Opening "{args.bndb}" and getting view...')
-    bv = BinaryViewType.get_view_of_file(args.bndb)
+    logging.info('Opening "%s" and getting view...', args.bndb)
+    view = BinaryViewType.get_view_of_file(args.bndb)
     logging.info('Running BN analysis, this may take some time...')
-    #bv.reanalyze()
-    bv.update_analysis_and_wait()
 
-    recover = KConfigRecover(bv)
-    config = recover.do()
+    # This is needed to relocate strings, apparently update_analysis_and_wait isn't enough. I
+    # recommend commenting this line for dev (if you don't need to use get_string_at APIs
+    view.reanalyze()
+
+    view.update_analysis_and_wait()
+
+    kconfigr = KConfigRecover(view)
+    config = kconfigr.recover()
     save_kconfig(config, args.kconfig)
 
 

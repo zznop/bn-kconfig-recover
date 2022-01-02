@@ -1,4 +1,4 @@
-# bn-kconfig-recover
+# bn-kconfig-recover ![Python Lint](https://github.com/zznop/bn-kconfig-recover/workflows/pylint/badge.svg)
 
 ![demo bn-kconfig-recover](bn-kconfig-recover.gif)
 

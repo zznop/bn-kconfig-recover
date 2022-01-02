@@ -1,9 +1,20 @@
-from binaryninja import BinaryView, HighLevelILOperation, BinaryReader
+"""Contains classes and helper functions for using BN API to recover kernel configuration options
+"""
+
 from enum import Enum
 import logging
 
+from binaryninja import BinaryView, HighLevelILOperation
+
+class AnalysisError(Exception):
+    """Excepton raised if there is an error or unexpected issue when analyzing code
+    """
 
 class ConfigStatus(Enum):
+    """Enum that represent whether a boolean configuration option is set, unset, or there was an
+    error while trying to recover
+    """
+
     # Configuration is not set
     NOT_SET = 0
     # Configuration is set
@@ -20,24 +31,24 @@ def save_kconfig(config: dict, filepath: str):
       filepath: Path to output kconfig file.
     """
 
-    with open(filepath, 'w') as f:
+    with open(filepath, 'w', encoding='utf-8') as _file:
         for subsystem, settings in config.items():
-            f.write('#\n' f"# {subsystem}\n" '#\n')
+            _file.write('#\n' f"# {subsystem}\n" '#\n')
             for name, setting in settings.items():
                 if not setting:
-                    f.write(f'# {name} needs user intervention\n')
+                    _file.write(f'# {name} needs user intervention\n')
                 elif isinstance(setting, str):
-                    f.write(f'{name}="{setting}"\n')
+                    _file.write(f'{name}="{setting}"\n')
                 elif isinstance(setting, ConfigStatus):
                     if setting == ConfigStatus.SET:
-                        f.write(f'{name}=y\n')
+                        _file.write(f'{name}=y\n')
                     elif setting == ConfigStatus.NOT_SET:
-                        f.write(f'# {name} is not set\n')
+                        _file.write(f'# {name} is not set\n')
                     elif setting == ConfigStatus.ERROR:
-                        f.write(f'# {name} needs user intervention\n')
-            f.write('\n')
+                        _file.write(f'# {name} needs user intervention\n')
+            _file.write('\n')
 
-    logging.info(f'Recovered kconfig saved to "{filepath}"')
+    logging.info('Recovered kconfig saved to "%s"', filepath)
 
 
 def to_ulong(i: int) -> int:
@@ -56,9 +67,9 @@ def to_ulong(i: int) -> int:
 class KConfigRecover:
     """Class that uses BN API to attempt to recover kernel configurations.
     """
-    def __init__(self, bv: BinaryView):
-        self.bv = bv
-        self.br = BinaryReader(self.bv)
+
+    def __init__(self, view: BinaryView):
+        self.view = view
         self.helpers = {
             'General Setup': {
                 # General setup
@@ -100,7 +111,8 @@ class KConfigRecover:
                 self._recover_config_generic_msi_irq_domain,
                 'CONFIG_GENERIC_IRQ_MATRIX_ALLOCATOR':
                 self._recover_config_generic_irq_matrix_allocator,
-                # There is no way to determine whether or not this setting is set. It's used for PCI drivers (see drivers/pci/msi.c)
+                # There is no way to determine whether or not this setting is set. It's used for
+                # PCI drivers (see drivers/pci/msi.c)
                 'CONFIG_GENERIC_IRQ_RESERVATION_MODE':
                 None,
                 'CONFIG_IRQ_FORCED_THREADING':
@@ -113,8 +125,8 @@ class KConfigRecover:
                 self._recover_config_clocksource_watchdog,
                 'CONFIG_ARCH_CLOCKSOURCE_DATA':
                 self._recover_config_arch_clocksource_data,
-                # TODO: I think we can get this one, but it will be a lot of work and won't make a difference for
-                # building drivers. See kernel/time/timekeeping_internal.h
+                # I think we can get this one, but it will be a lot of work and won't make a
+                # difference for building LKMs. See kernel/time/timekeeping_internal.h
                 'CONFIG_CLOCKSOURCE_VALIDATE_LAST_CYCLE':
                 None,
                 'CONFIG_GENERIC_TIME_VSYSCALL':
@@ -123,8 +135,9 @@ class KConfigRecover:
                 self._recover_config_generic_clockevents,
                 'CONFIG_GENERIC_CLOCKEVENTS_BROADCAST':
                 self._recover_config_generic_clockevents_broadcast,
-                # TODO: Another one we might be able to get, but may not be worth the effort. Slightly changes
-                # clockevents_program_min_delta, a static function in kernel/time/clockevents.c
+                # Another one we might be able to get, but may not be worth the effort.
+                # Slightly changes clockevents_program_min_delta, a static function in
+                # kernel/time/clockevents.c
                 'CONFIG_GENERIC_CLOCKEVENTS_MIN_BROADCAST':
                 None,
                 'CONFIG_GENERIC_CMOS_UPDATE':
@@ -134,7 +147,8 @@ class KConfigRecover:
                 'CONFIG_TICK_ONESHOT': self._recover_config_tick_oneshot,
                 'CONFIG_NO_HZ_COMMON': self._recover_config_no_hz_common,
                 'CONFIG_NO_HZ_FULL': self._recover_config_no_hz_full,
-                # CONFIG_NO_HZ_IDLE, CONFIG_NO_HZ_PERIODIC, and CONFIG_NO_HZ don't seem to be used in v4.18 kernel
+                # CONFIG_NO_HZ_IDLE, CONFIG_NO_HZ_PERIODIC, and CONFIG_NO_HZ don't seem to be used
+                # in v4.18 kernel
                 'CONFIG_NO_HZ_IDLE': None,
                 'CONFIG_HZ_PERIODIC': None,
                 'CONFIG_NO_HZ': None,
@@ -163,29 +177,25 @@ class KConfigRecover:
     def _recover_config_build_salt(self) -> str:
         """Recover CONFIG_BUILD_SALT configuration.
 
-        Analyze the first call to seq_printf in sched_debug_header and extract the pointer to the build salt from the
-        third parameter.
+        Analyze the first call to seq_printf in sched_debug_header and extract the pointer to the
+        build salt from the third parameter.
 
         Returns:
           Build salt string or None.
         """
 
-        syms = self.bv.get_symbols_by_name('sched_debug_header')
+        syms = self.view.get_symbols_by_name('sched_debug_header')
         if not syms:
-            logging.error('Failed to lookup sched_debug_header')
-            return None
+            raise AnalysisError('Failed to lookup sched_debug_header')
 
-        sched_debug_header = self.bv.get_function_at(syms[0].address)
+        sched_debug_header = self.view.get_function_at(syms[0].address)
         if not sched_debug_header:
-            logging.error('Failed to get function sched_debug_header')
-            return None
+            raise AnalysisError('Failed to get function sched_debug_header')
 
-        syms = self.bv.get_symbols_by_name('seq_printf')
+        syms = self.view.get_symbols_by_name('seq_printf')
         if not syms:
-            logging.error('Failed to lookup seq_printf')
-            return None
+            raise AnalysisError('Failed to lookup seq_printf')
 
-        call_to_seq_printf = None
         for block in sched_debug_header.high_level_il:
             for instr in block:
                 if instr.operation != HighLevelILOperation.HLIL_CALL:
@@ -196,27 +206,26 @@ class KConfigRecover:
 
                 if to_ulong(instr.dest.constant) == syms[0].address:
                     if len(instr.params) < 3:
-                        logging.error(
-                            'First call in sched_debug header is not to seq_printf!?'
-                        )
-                        return None
+                        raise AnalysisError(
+                            'First call in sched_debug header is not to seq_printf!?')
 
                     if instr.params[
                             2].operation != HighLevelILOperation.HLIL_CONST_PTR:
-                        logging.error(
+                        raise AnalysisError(
                             'param3 of seq_printf call is not a pointer')
-                        return None
 
-                    s = self.bv.get_ascii_string_at(
+                    _string = self.view.get_ascii_string_at(
                         to_ulong(instr.params[2].constant))
-                    if not s:
-                        logging.error('Failed to get build salt string')
-                        return None
+                    if not _string:
+                        raise AnalysisError('Failed to get build salt string')
 
-                    return s.value
+                    return _string.value
+
+        raise AnalysisError('No call instruction found in sched_debug_header!?')
 
     def _set_if_symbol_present(self, name: str) -> ConfigStatus:
-        """Helper for recovering configuration settings that can be determined based on the presence of a symbol
+        """Helper for recovering configuration settings that can be determined based on the
+        presence of a symbol
 
         Args:
           name: Symbol name.
@@ -225,13 +234,14 @@ class KConfigRecover:
           Configuration setting.
         """
 
-        if self.bv.get_symbols_by_name(name):
+        if self.view.get_symbols_by_name(name):
             return ConfigStatus.SET
 
         return ConfigStatus.NOT_SET
 
     def _set_if_string_present(self, value: str) -> ConfigStatus:
-        """Helper for recovering configuration settings that can be determined based on the presence of a string
+        """Helper for recovering configuration settings that can be determined based on the
+        presence of a string
 
         Args:
           value: String value.
@@ -239,9 +249,9 @@ class KConfigRecover:
         Returns:
           Configuration setting.
         """
-        strings = self.bv.get_strings()
-        for s in strings:
-            if s.value == value:
+        strings = self.view.get_strings()
+        for string in strings:
+            if string.value == value:
                 return ConfigStatus.SET
 
         return ConfigStatus.NOT_SET
@@ -280,22 +290,22 @@ class KConfigRecover:
         """Set if any of the symbols in process_vm_access.c are present
         """
 
-        if self.bv.platform.arch.name == 'x86_64':
+        if self.view.platform.arch.name == 'x86_64':
             return self._set_if_symbol_present('__x64_sys_process_vm_readv')
 
         logging.error(
-            f'Architecture is unsupported {self.bv.platform.arch.name}')
+            'Architecture is unsupported %s', self.view.platform.arch.name)
         return ConfigStatus.ERROR
 
     def _recover_config_uselib(self) -> ConfigStatus:
         """Set if sys_uselib is present.
         """
 
-        if self.bv.platform.arch.name == 'x86_64':
+        if self.view.platform.arch.name == 'x86_64':
             return self._set_if_symbol_present('__x64_sys_uselib')
 
         logging.error(
-            f'Architecture is unsupported {self.bv.platform.arch.name}')
+            'Architecture is unsupported %s', self.view.platform.arch.name)
         return ConfigStatus.ERROR
 
     def _recover_config_audit(self) -> ConfigStatus:
@@ -335,7 +345,9 @@ class KConfigRecover:
         return self._set_if_symbol_present('arch_show_interrupts')
 
     def _recover_config_generic_irq_effective_aff_mask(self) -> ConfigStatus:
-        """Set if effective_affinity_list string is present in the binary. See proc.c:register_irq_proc.
+        """Set if effective_affinity_list string is present in the binary.
+
+        See proc.c:register_irq_proc.
         """
 
         return self._set_if_string_present('effective_affinity_list')
@@ -416,11 +428,11 @@ class KConfigRecover:
         """Set unconditionally for certain architectures.
         """
 
-        if self.bv.platform.arch.name == 'x86_64':
+        if self.view.platform.arch.name == 'x86_64':
             return ConfigStatus.SET
 
         logging.error(
-            f'Architecture is unsupported {self.bv.platform.arch.name}')
+            'Architecture is unsupported %s', self.view.platform.arch.name)
         return ConfigStatus.ERROR
 
     def _recover_config_generic_time_vsyscall(self) -> ConfigStatus:
@@ -480,31 +492,32 @@ class KConfigRecover:
     def _recover_config_preempt_voluntary(self) -> ConfigStatus:
         """Set if mmiotrace_iounmap calls _cond_resched.
 
-        This starts with include/linux/kernel.h. If the configuration is set, then might_resched calls _cond_resched.
-        The might_sleep macro calls might_resched, and mmiotrace_iounmap calls might_sleep.
+        This starts with include/linux/kernel.h. If the configuration is set, then might_resched
+        calls _cond_resched. The might_sleep macro calls might_resched, and mmiotrace_iounmap
+        calls might_sleep.
         """
 
-        syms = self.bv.get_symbols_by_name('_cond_resched')
+        syms = self.view.get_symbols_by_name('_cond_resched')
         if not syms:
             logging.error('Failed to lookup _cond_resched')
             return ConfigStatus.ERROR
 
-        xrefs = self.bv.get_code_refs(syms[0].address)
+        xrefs = self.view.get_code_refs(syms[0].address)
         for xref in xrefs:
             if xref.function.name == 'mmiotrace_iounmap':
                 return ConfigStatus.SET
 
-        return ConfigStatus.NO_SET
+        return ConfigStatus.NOT_SET
 
     def _recover_config_tick_cpu_accounting(self) -> ConfigStatus:
         """Set if architecture is not PPC64.
         """
 
-        if self.bv.platform.arch.name == 'x86_64':
+        if self.view.platform.arch.name == 'x86_64':
             return ConfigStatus.SET
 
         logging.error(
-            f'Architecture is unsupported {self.bv.platform.arch.name}')
+            'Architecture is unsupported %s', self.view.platform.arch.name)
         return ConfigStatus.ERROR
 
     def _recover_config_virt_cpu_accounting_gen(self) -> ConfigStatus:
@@ -543,20 +556,24 @@ class KConfigRecover:
 
         return self._set_if_symbol_present('xacct_add_tsk')
 
-    def do(self) -> dict:
+    def recover(self) -> dict:
         """Analyze binary and recover kernel configurations
 
         Returns:
           Dictionary of recovered configurations
         """
 
-        results = dict()
+        results = {}
         for subsystem, settings in self.helpers.items():
-            logging.info(f'Recovering "{subsystem}" configurations...')
-            results[subsystem] = dict()
+            logging.info('Recovering "%s" configurations...', subsystem)
+            results[subsystem] = {}
             for setting, helper in settings.items():
-                if helper:
-                    results[subsystem][setting] = helper()
+                if helper is not None:
+                    try:
+                        results[subsystem][setting] = helper()
+                    except AnalysisError as ex:
+                        logging.error(ex)
+                        results[subsystem][setting] = None
                 else:
                     results[subsystem][setting] = None
 
