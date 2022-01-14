@@ -68,7 +68,7 @@ class KConfigRecover:
     """Class that uses BN API to attempt to recover kernel configurations.
     """
 
-    def __init__(self, view: BinaryView):
+    def __init__(self, view: BinaryView) -> None:
         self.view = view
         self.helpers = {
             'General Setup': {
